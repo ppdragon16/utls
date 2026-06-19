@@ -19,6 +19,7 @@ type BytesBuffer interface {
 	Len() int
 	Bytes() []byte
 	Next(n int) []byte
+	Read(p []byte) (n int, err error)
 	Write(p []byte) (int, error)
 	ReadFrom(r io.Reader) (int64, error)
 	Grow(n int)
