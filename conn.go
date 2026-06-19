@@ -230,6 +230,10 @@ func (hc *halfConn) changeCipherSpec() error {
 }
 
 func (hc *halfConn) setTrafficSecret(suite *cipherSuiteTLS13, level QUICEncryptionLevel, secret []byte) {
+	// Recycle the old AEAD wrapper if it came from a pool.
+	if x, ok := hc.cipher.(*xorNonceAEAD); ok {
+		xorNonceAEADPool.Put(x)
+	}
 	hc.trafficSecret = secret
 	hc.level = level
 	key, iv := suite.trafficKey(secret)

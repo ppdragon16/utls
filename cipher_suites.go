@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"hash"
 	"runtime"
+	"sync"
 	_ "unsafe" // for linkname
 
 	"github.com/refraction-networking/utls/internal/boring"
@@ -481,6 +482,8 @@ type xorNonceAEAD struct {
 	aead      cipher.AEAD
 }
 
+var xorNonceAEADPool = sync.Pool{New: func() any { return new(xorNonceAEAD) }}
+
 func (f *xorNonceAEAD) NonceSize() int        { return 8 } // 64-bit sequence number
 func (f *xorNonceAEAD) Overhead() int         { return f.aead.Overhead() }
 func (f *xorNonceAEAD) explicitNonceLen() int { return 0 }
@@ -568,7 +571,8 @@ func aeadAESGCMTLS13(key, nonceMask []byte) aead {
 		panic(err)
 	}
 
-	ret := &xorNonceAEAD{aead: aead}
+	ret := xorNonceAEADPool.Get().(*xorNonceAEAD)
+	ret.aead = aead
 	copy(ret.nonceMask[:], nonceMask)
 	return ret
 }
@@ -582,7 +586,8 @@ func aeadChaCha20Poly1305(key, nonceMask []byte) aead {
 		panic(err)
 	}
 
-	ret := &xorNonceAEAD{aead: aead}
+	ret := xorNonceAEADPool.Get().(*xorNonceAEAD)
+	ret.aead = aead
 	copy(ret.nonceMask[:], nonceMask)
 	return ret
 }
