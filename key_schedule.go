@@ -5,8 +5,8 @@
 package tls
 
 import (
+	"crypto"
 	"crypto/ecdh"
-	"crypto/hmac"
 	"crypto/mlkem"
 	"errors"
 	"hash"
@@ -36,9 +36,41 @@ func (c *cipherSuiteTLS13) trafficKey(trafficSecret []byte) (key, iv []byte) {
 // selection.
 func (c *cipherSuiteTLS13) finishedHash(baseKey []byte, transcript hash.Hash) []byte {
 	finishedKey := tls13.ExpandLabel(c.hash.New, baseKey, "finished", nil, c.hash.Size())
-	verifyData := hmac.New(c.hash.New, finishedKey)
-	verifyData.Write(transcript.Sum(nil))
-	return verifyData.Sum(nil)
+	return hmacPooled(c.hash, finishedKey, transcript.Sum(nil))
+}
+
+// hmacPooled computes HMAC-Hash(key, data) using pooled hash objects,
+// avoiding the two hash allocations inside crypto/hmac.New.
+func hmacPooled(h crypto.Hash, key, data []byte) []byte {
+	inner := PooledHashNew(h)
+	outer := PooledHashNew(h)
+	defer PooledHashPut(inner)
+	defer PooledHashPut(outer)
+
+	blockSize := inner.BlockSize()
+
+	// Build ipad/opad.
+	ipad := getBuf(blockSize)
+	opad := getBuf(blockSize)
+	defer putBuf(ipad)
+	defer putBuf(opad)
+
+	for i := 0; i < len(key); i++ {
+		ipad[i] = key[i] ^ 0x36
+		opad[i] = key[i] ^ 0x5c
+	}
+	for i := len(key); i < blockSize; i++ {
+		ipad[i] = 0x36
+		opad[i] = 0x5c
+	}
+
+	inner.Write(ipad)
+	inner.Write(data)
+	innerSum := inner.Sum(nil)
+
+	outer.Write(opad)
+	outer.Write(innerSum)
+	return outer.Sum(nil)
 }
 
 // exportKeyingMaterial implements RFC5705 exporters for TLS 1.3 according to
