@@ -6,15 +6,12 @@ package tls
 
 import (
 	"crypto/mlkem"
-	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"math"
-	"math/big"
-	"math/rand"
+	randv2 "math/rand/v2"
 	"sort"
 	"strconv"
 
@@ -2699,8 +2696,6 @@ func utlsIdToSpec(id ClientHelloID) (ClientHelloSpec, error) {
 //
 // This feature was first introduced by Chrome 106.
 func ShuffleChromeTLSExtensions(exts []TLSExtension) []TLSExtension {
-	// unshufCheck checks if the exts[idx] is a GREASE/padding/pre_shared_key extension,
-	// and returns true on success. For these extensions are considered positionally invariant.
 	var skipShuf = func(idx int, exts []TLSExtension) bool {
 		switch exts[idx].(type) {
 		case *UtlsGREASEExtension, *UtlsPaddingExtension, PreSharedKeyExtension:
@@ -2710,25 +2705,14 @@ func ShuffleChromeTLSExtensions(exts []TLSExtension) []TLSExtension {
 		}
 	}
 
-	// Shuffle other extensions
-	randInt64, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
-	if err != nil {
-		// warning: random could be deterministic
-		rand.Shuffle(len(exts), func(i, j int) {
-			if skipShuf(i, exts) || skipShuf(j, exts) {
-				return // do not shuffle some of the extensions
-			}
-			exts[i], exts[j] = exts[j], exts[i]
-		})
-		fmt.Println("Warning: failed to use a cryptographically secure random number generator. The shuffle can be deterministic.")
-	} else {
-		rand.New(rand.NewSource(randInt64.Int64())).Shuffle(len(exts), func(i, j int) {
-			if skipShuf(i, exts) || skipShuf(j, exts) {
-				return // do not shuffle some of the extensions
-			}
-			exts[i], exts[j] = exts[j], exts[i]
-		})
-	}
+	// math/rand/v2 uses an auto-seeded ChaCha8 PRNG and requires no
+	// explicit seeding — avoids crypto/rand + big.Int + rand.New allocs.
+	randv2.Shuffle(len(exts), func(i, j int) {
+		if skipShuf(i, exts) || skipShuf(j, exts) {
+			return
+		}
+		exts[i], exts[j] = exts[j], exts[i]
+	})
 
 	return exts
 }

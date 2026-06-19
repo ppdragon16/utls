@@ -103,9 +103,9 @@ type Conn struct {
 
 	// input/output
 	in, out   halfConn
-	rawInput  bytes.Buffer // raw input, starting with a record header
+	rawInput  BytesBuffer // raw input, starting with a record header
 	input     bytes.Reader // application data waiting to be read, from rawInput.Next
-	hand      bytes.Buffer // handshake data waiting to be read
+	hand      BytesBuffer // handshake data waiting to be read
 	buffering bool         // whether records are buffered in sendBuf
 	sendBuf   []byte       // a buffer of records waiting to be sent
 
@@ -124,6 +124,18 @@ type Conn struct {
 	activeCall atomic.Int32
 
 	tmp [16]byte
+}
+
+// NewTLSConn returns a *Conn with BytesBuffer fields initialized.
+func NewTLSConn(conn net.Conn, config *Config, isClient bool) *Conn {
+	c := &Conn{
+		conn:     conn,
+		config:   config,
+		isClient: isClient,
+	}
+	c.hand = NewBytesBuffer()
+	c.rawInput = NewBytesBuffer()
+	return c
 }
 
 // Access to net.Conn methods.

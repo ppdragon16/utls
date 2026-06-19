@@ -5,7 +5,6 @@
 package tls
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/cipher"
@@ -65,9 +64,9 @@ func UClient(conn net.Conn, config *Config, clientHelloID ClientHelloID) *UConn 
 	if config == nil {
 		config = &Config{}
 	}
-	tlsConn := Conn{conn: conn, config: config, isClient: true}
-	handshakeState := PubClientHandshakeState{C: &tlsConn, Hello: &PubClientHelloMsg{}}
-	uconn := UConn{Conn: &tlsConn, ClientHelloID: clientHelloID, HandshakeState: handshakeState}
+	tlsConn := NewTLSConn(conn, config, true)
+	handshakeState := PubClientHandshakeState{C: tlsConn, Hello: &PubClientHelloMsg{}}
+	uconn := UConn{Conn: tlsConn, ClientHelloID: clientHelloID, HandshakeState: handshakeState}
 	uconn.HandshakeState.uconn = &uconn
 	uconn.handshakeFn = uconn.clientHandshake
 	uconn.sessionController = newSessionController(&uconn)
@@ -630,49 +629,39 @@ func (uconn *UConn) MarshalClientHelloNoECH() error {
 		helloLen += 2 + extensionsLen // 2 bytes for extensions' length
 	}
 
-	helloBuffer := bytes.Buffer{}
-	bufferedWriter := bufio.NewWriterSize(&helloBuffer, helloLen+4) // 1 byte for tls record type, 3 for length
-	// We use buffered Writer to avoid checking write errors after every Write(): whenever first error happens
-	// Write() will become noop, and error will be accessible via Flush(), which is called once in the end
+	helloBuf := new(bytes.Buffer)
+	helloBuf.Grow(helloLen + 4)
 
-	binary.Write(bufferedWriter, binary.BigEndian, typeClientHello)
-	helloLenBytes := []byte{byte(helloLen >> 16), byte(helloLen >> 8), byte(helloLen)} // poor man's uint24
-	binary.Write(bufferedWriter, binary.BigEndian, helloLenBytes)
-	binary.Write(bufferedWriter, binary.BigEndian, hello.Vers)
-
-	binary.Write(bufferedWriter, binary.BigEndian, hello.Random)
-
-	binary.Write(bufferedWriter, binary.BigEndian, uint8(len(hello.SessionId)))
-	binary.Write(bufferedWriter, binary.BigEndian, hello.SessionId)
-
-	binary.Write(bufferedWriter, binary.BigEndian, uint16(len(hello.CipherSuites)<<1))
+	// Encode directly into the buffer — bytes.Buffer.Write never fails.
+	_ = binary.Write(helloBuf, binary.BigEndian, typeClientHello)
+	helloLenBytes := [3]byte{byte(helloLen >> 16), byte(helloLen >> 8), byte(helloLen)}
+	_ = binary.Write(helloBuf, binary.BigEndian, helloLenBytes)
+	_ = binary.Write(helloBuf, binary.BigEndian, hello.Vers)
+	_ = binary.Write(helloBuf, binary.BigEndian, hello.Random)
+	_ = binary.Write(helloBuf, binary.BigEndian, uint8(len(hello.SessionId)))
+	_ = binary.Write(helloBuf, binary.BigEndian, hello.SessionId)
+	_ = binary.Write(helloBuf, binary.BigEndian, uint16(len(hello.CipherSuites)<<1))
 	for _, suite := range hello.CipherSuites {
-		binary.Write(bufferedWriter, binary.BigEndian, suite)
+		_ = binary.Write(helloBuf, binary.BigEndian, suite)
 	}
-
-	binary.Write(bufferedWriter, binary.BigEndian, uint8(len(hello.CompressionMethods)))
-	binary.Write(bufferedWriter, binary.BigEndian, hello.CompressionMethods)
+	_ = binary.Write(helloBuf, binary.BigEndian, uint8(len(hello.CompressionMethods)))
+	_ = binary.Write(helloBuf, binary.BigEndian, hello.CompressionMethods)
 
 	if len(uconn.Extensions) > 0 {
-		binary.Write(bufferedWriter, binary.BigEndian, uint16(extensionsLen))
+		_ = binary.Write(helloBuf, binary.BigEndian, uint16(extensionsLen))
 		for _, ext := range uconn.Extensions {
-			if _, err := bufferedWriter.ReadFrom(ext); err != nil {
+			if _, err := helloBuf.ReadFrom(ext); err != nil {
 				return err
 			}
 		}
 	}
 
-	err := bufferedWriter.Flush()
-	if err != nil {
-		return err
-	}
-
-	if helloBuffer.Len() != 4+helloLen {
+	if helloBuf.Len() != 4+helloLen {
 		return errors.New("utls: unexpected ClientHello length. Expected: " + strconv.Itoa(4+helloLen) +
-			". Got: " + strconv.Itoa(helloBuffer.Len()))
+			". Got: " + strconv.Itoa(helloBuf.Len()))
 	}
 
-	hello.Raw = helloBuffer.Bytes()
+	hello.Raw = helloBuf.Bytes()
 	return nil
 }
 
@@ -767,7 +756,7 @@ func (uconn *UConn) GetUnderlyingConn() net.Conn {
 // MakeConnWithCompleteHandshake allows to forge both server and client side TLS connections.
 // Major Hack Alert.
 func MakeConnWithCompleteHandshake(tcpConn net.Conn, version uint16, cipherSuite uint16, masterSecret []byte, clientRandom []byte, serverRandom []byte, isClient bool) *Conn {
-	tlsConn := &Conn{conn: tcpConn, config: &Config{}, isClient: isClient}
+	tlsConn := NewTLSConn(tcpConn, &Config{}, isClient)
 	cs := cipherSuiteByID(cipherSuite)
 	if cs != nil {
 		// This is mostly borrowed from establishKeys()

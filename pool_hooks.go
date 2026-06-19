@@ -1,15 +1,41 @@
 package tls
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/sha256"
 	"crypto/sha512"
 	"hash"
+	"io"
 	"sync"
 
 	"github.com/refraction-networking/utls/internal/hkdf"
 	"github.com/refraction-networking/utls/internal/tls13"
 )
+
+// BytesBuffer is the interface used by Conn.hand and Conn.rawInput.
+// *bytes.Buffer and *pool.PooledBuffer both satisfy it.
+type BytesBuffer interface {
+	Len() int
+	Bytes() []byte
+	Next(n int) []byte
+	Write(p []byte) (int, error)
+	ReadFrom(r io.Reader) (int64, error)
+	Grow(n int)
+}
+
+// NewBytesBufferFunc, if set, provides pooled BytesBuffer instances.
+// Set by dae's init() to inject *pool.PooledBuffer.
+var NewBytesBufferFunc func() BytesBuffer
+
+// NewBytesBuffer returns a BytesBuffer: pooled if NewBytesBufferFunc is set,
+// otherwise *bytes.Buffer.
+func NewBytesBuffer() BytesBuffer {
+	if NewBytesBufferFunc != nil {
+		return NewBytesBufferFunc()
+	}
+	return new(bytes.Buffer)
+}
 
 // SetBufferPool injects external buffer get/put functions into all uTLS
 // internal packages that perform short-lived allocations. When non-nil,
@@ -28,6 +54,8 @@ func SetBufferPool(get func(int) []byte, put func([]byte)) {
 	tls13.PutBuffer = put
 	hkdf.GetBuffer = get
 	hkdf.PutBuffer = put
+	GetBuffer = get
+	PutBuffer = put
 }
 
 // getBuf returns a buffer of the given size from the injected pool,
