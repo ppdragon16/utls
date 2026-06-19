@@ -494,11 +494,13 @@ func (uconn *UConn) extensionsList() []uint16 {
 
 	outerExts := []uint16{}
 	for _, ext := range uconn.Extensions {
-		buffer := cryptobyte.String(make([]byte, 2000))
+		buf := getBuf(2000)
+		buffer := cryptobyte.String(buf)
 		ext.Read(buffer)
 		var extension uint16
 		buffer.ReadUint16(&extension)
 		outerExts = append(outerExts, extension)
+		putBuf(buf)
 	}
 	return outerExts
 }

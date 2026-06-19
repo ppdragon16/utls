@@ -13,6 +13,14 @@ import (
 	"github.com/refraction-networking/utls/internal/hkdf"
 )
 
+// GetBuffer, if non-nil, is used instead of make([]byte, size) for temporary
+// scratch buffers within this package. Set via the parent tls package's
+// SetBufferPool.
+var GetBuffer func(int) []byte
+
+// PutBuffer, if non-nil, returns a scratch buffer obtained via GetBuffer.
+var PutBuffer func([]byte)
+
 // We don't set the service indicator in this package but we delegate that to
 // the underlying functions because the TLS 1.3 KDF does not have a standard of
 // its own.
@@ -20,24 +28,26 @@ import (
 // ExpandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
 func ExpandLabel[H fips140.Hash](hash func() H, secret []byte, label string, context []byte, length int) []byte {
 	if len("tls13 ")+len(label) > 255 || len(context) > 255 {
-		// It should be impossible for this to panic: labels are fixed strings,
-		// and context is either a fixed-length computed hash, or parsed from a
-		// field which has the same length limitation.
-		//
-		// Another reasonable approach might be to return a randomized slice if
-		// we encounter an error, which would break the connection, but avoid
-		// panicking. This would perhaps be safer but significantly more
-		// confusing to users.
 		panic("tls13: label or context too long")
 	}
-	hkdfLabel := make([]byte, 0, 2+1+len("tls13 ")+len(label)+1+len(context))
+	labelCap := 2 + 1 + len("tls13 ") + len(label) + 1 + len(context)
+	var hkdfLabel []byte
+	if GetBuffer != nil {
+		hkdfLabel = GetBuffer(labelCap)[:0]
+	} else {
+		hkdfLabel = make([]byte, 0, labelCap)
+	}
 	hkdfLabel = byteorder.BEAppendUint16(hkdfLabel, uint16(length))
 	hkdfLabel = append(hkdfLabel, byte(len("tls13 ")+len(label)))
 	hkdfLabel = append(hkdfLabel, "tls13 "...)
 	hkdfLabel = append(hkdfLabel, label...)
 	hkdfLabel = append(hkdfLabel, byte(len(context)))
 	hkdfLabel = append(hkdfLabel, context...)
-	return hkdf.Expand(hash, secret, string(hkdfLabel), length)
+	result := hkdf.Expand(hash, secret, string(hkdfLabel), length)
+	if PutBuffer != nil {
+		PutBuffer(hkdfLabel)
+	}
+	return result
 }
 
 func extract[H fips140.Hash](hash func() H, newSecret, currentSecret []byte) []byte {
