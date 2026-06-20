@@ -7,12 +7,15 @@ package tls12
 import (
 	"crypto/hmac"
 	"hash"
+
+	"github.com/refraction-networking/utls/internal/hkdf"
 )
 
 // PRF implements the TLS 1.2 pseudo-random function, as defined in RFC 5246,
 // Section 5 and allowed by SP 800-135, Revision 1, Section 4.2.2.
 func PRF(hash func() hash.Hash, secret []byte, label string, seed []byte, keyLen int) []byte {
-	labelAndSeed := make([]byte, len(label)+len(seed))
+	labelAndSeed := hkdf.GetBufOrMake(len(label) + len(seed))
+	defer hkdf.PutBufIfSet(labelAndSeed)
 	copy(labelAndSeed, label)
 	copy(labelAndSeed[len(label):], seed)
 

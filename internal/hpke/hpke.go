@@ -27,7 +27,9 @@ type hkdfKDF struct {
 }
 
 func (kdf *hkdfKDF) LabeledExtract(sid []byte, salt []byte, label string, inputKey []byte) []byte {
-	labeledIKM := make([]byte, 0, 7+len(sid)+len(label)+len(inputKey))
+	buf := hkdf.GetBufOrMake(7 + len(sid) + len(label) + len(inputKey))
+	defer hkdf.PutBufIfSet(buf)
+	labeledIKM := buf[:0]
 	labeledIKM = append(labeledIKM, []byte("HPKE-v1")...)
 	labeledIKM = append(labeledIKM, sid...)
 	labeledIKM = append(labeledIKM, label...)
@@ -36,7 +38,9 @@ func (kdf *hkdfKDF) LabeledExtract(sid []byte, salt []byte, label string, inputK
 }
 
 func (kdf *hkdfKDF) LabeledExpand(suiteID []byte, randomKey []byte, label string, info []byte, length uint16) []byte {
-	labeledInfo := make([]byte, 0, 2+7+len(suiteID)+len(label)+len(info))
+	buf := hkdf.GetBufOrMake(2 + 7 + len(suiteID) + len(label) + len(info))
+	defer hkdf.PutBufIfSet(buf)
+	labeledInfo := buf[:0]
 	labeledInfo = byteorder.BEAppendUint16(labeledInfo, length)
 	labeledInfo = append(labeledInfo, []byte("HPKE-v1")...)
 	labeledInfo = append(labeledInfo, suiteID...)
@@ -255,8 +259,9 @@ func SetupReceipient(kemID, kdfID, aeadID uint16, priv *ecdh.PrivateKey, info, e
 	return &Receipient{context}, nil
 }
 
-func (ctx *context) nextNonce() []byte {
-	nonce := ctx.seqNum.bytes()[16-ctx.aead.NonceSize():]
+func (ctx *context) nextNonce(buf *[16]byte) []byte {
+	ctx.seqNum.copyTo(buf)
+	nonce := buf[16-ctx.aead.NonceSize():]
 	for i := range ctx.baseNonce {
 		nonce[i] ^= ctx.baseNonce[i]
 	}
@@ -273,13 +278,15 @@ func (ctx *context) incrementNonce() {
 }
 
 func (s *Sender) Seal(aad, plaintext []byte) ([]byte, error) {
-	ciphertext := s.aead.Seal(nil, s.nextNonce(), plaintext, aad)
+	var nonceBuf [16]byte
+	ciphertext := s.aead.Seal(nil, s.nextNonce(&nonceBuf), plaintext, aad)
 	s.incrementNonce()
 	return ciphertext, nil
 }
 
 func (r *Receipient) Open(aad, ciphertext []byte) ([]byte, error) {
-	plaintext, err := r.aead.Open(nil, r.nextNonce(), ciphertext, aad)
+	var nonceBuf [16]byte
+	plaintext, err := r.aead.Open(nil, r.nextNonce(&nonceBuf), ciphertext, aad)
 	if err != nil {
 		return nil, err
 	}
@@ -325,9 +332,7 @@ func (u uint128) bitLen() int {
 	return bits.Len64(u.hi) + bits.Len64(u.lo)
 }
 
-func (u uint128) bytes() []byte {
-	b := make([]byte, 16)
-	byteorder.BEPutUint64(b[0:], u.hi)
-	byteorder.BEPutUint64(b[8:], u.lo)
-	return b
+func (u uint128) copyTo(buf *[16]byte) {
+	byteorder.BEPutUint64(buf[0:], u.hi)
+	byteorder.BEPutUint64(buf[8:], u.lo)
 }

@@ -5,16 +5,18 @@
 package tls
 
 import (
-	"bytes"
 	"context"
 	"crypto/cipher"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"net"
 	"slices"
 	"strconv"
+
+	"github.com/refraction-networking/utls/internal/hkdf"
 
 	"golang.org/x/crypto/cryptobyte"
 )
@@ -518,7 +520,10 @@ func (uconn *UConn) computeAndUpdateOuterECHExtension(inner *clientHelloMsg, ech
 	}
 
 	encryptedLen := len(encodedInner) + 16
-	outerECHExt, err := generateOuterECHExt(ech.config.ConfigID, ech.kdfID, ech.aeadID, encapKey, make([]byte, encryptedLen))
+	payloadPlaceholder := hkdf.GetBufOrMake(encryptedLen)
+	defer hkdf.PutBufIfSet(payloadPlaceholder)
+	clear(payloadPlaceholder)
+	outerECHExt, err := generateOuterECHExt(ech.config.ConfigID, ech.kdfID, ech.aeadID, encapKey, payloadPlaceholder)
 	if err != nil {
 		return err
 	}
@@ -629,39 +634,39 @@ func (uconn *UConn) MarshalClientHelloNoECH() error {
 		helloLen += 2 + extensionsLen // 2 bytes for extensions' length
 	}
 
-	helloBuf := new(bytes.Buffer)
-	helloBuf.Grow(helloLen + 4)
-
-	// Encode directly into the buffer — bytes.Buffer.Write never fails.
-	_ = binary.Write(helloBuf, binary.BigEndian, typeClientHello)
-	helloLenBytes := [3]byte{byte(helloLen >> 16), byte(helloLen >> 8), byte(helloLen)}
-	_ = binary.Write(helloBuf, binary.BigEndian, helloLenBytes)
-	_ = binary.Write(helloBuf, binary.BigEndian, hello.Vers)
-	_ = binary.Write(helloBuf, binary.BigEndian, hello.Random)
-	_ = binary.Write(helloBuf, binary.BigEndian, uint8(len(hello.SessionId)))
-	_ = binary.Write(helloBuf, binary.BigEndian, hello.SessionId)
-	_ = binary.Write(helloBuf, binary.BigEndian, uint16(len(hello.CipherSuites)<<1))
+	raw := make([]byte, 0, helloLen+4)
+	raw = append(raw, byte(typeClientHello))
+	raw = append(raw, byte(helloLen>>16), byte(helloLen>>8), byte(helloLen))
+	raw = binary.BigEndian.AppendUint16(raw, hello.Vers)
+	raw = append(raw, hello.Random...)
+	raw = append(raw, uint8(len(hello.SessionId)))
+	raw = append(raw, hello.SessionId...)
+	raw = binary.BigEndian.AppendUint16(raw, uint16(len(hello.CipherSuites)<<1))
 	for _, suite := range hello.CipherSuites {
-		_ = binary.Write(helloBuf, binary.BigEndian, suite)
+		raw = binary.BigEndian.AppendUint16(raw, suite)
 	}
-	_ = binary.Write(helloBuf, binary.BigEndian, uint8(len(hello.CompressionMethods)))
-	_ = binary.Write(helloBuf, binary.BigEndian, hello.CompressionMethods)
+	raw = append(raw, uint8(len(hello.CompressionMethods)))
+	raw = append(raw, hello.CompressionMethods...)
 
 	if len(uconn.Extensions) > 0 {
-		_ = binary.Write(helloBuf, binary.BigEndian, uint16(extensionsLen))
+		raw = binary.BigEndian.AppendUint16(raw, uint16(extensionsLen))
 		for _, ext := range uconn.Extensions {
-			if _, err := helloBuf.ReadFrom(ext); err != nil {
+			extBuf := getBuf(ext.Len())
+			n, err := ext.Read(extBuf)
+			if err != nil && err != io.EOF {
+				putBuf(extBuf)
 				return err
 			}
+			raw = append(raw, extBuf[:n]...)
+			putBuf(extBuf)
 		}
 	}
 
-	if helloBuf.Len() != 4+helloLen {
-		return errors.New("utls: unexpected ClientHello length. Expected: " + strconv.Itoa(4+helloLen) +
-			". Got: " + strconv.Itoa(helloBuf.Len()))
+	if len(raw) != helloLen+4 {
+		return errors.New("utls: unexpected ClientHello length")
 	}
 
-	hello.Raw = helloBuf.Bytes()
+	hello.Raw = raw
 	return nil
 }
 

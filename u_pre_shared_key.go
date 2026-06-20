@@ -299,6 +299,9 @@ func (e *UtlsPreSharedKeyExtension) PatchBuiltHello(hello *PubClientHelloMsg) er
 		return errors.New("tls: internal error: failed to update binders")
 	}
 
+	// Release reference to the pooled Raw buffer.
+	private.original = nil
+
 	//--- mirror loadSession() end ---//
 	e.Binders = pskBinders
 

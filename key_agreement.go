@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/refraction-networking/utls/internal/hkdf"
 )
 
 // A keyAgreement implements the client and server side of a TLS 1.0–1.2 key
@@ -190,7 +192,8 @@ func (ka *ecdheKeyAgreement) generateServerKeyExchange(config *Config, cert *Cer
 
 	// See RFC 4492, Section 5.4.
 	ecdhePublic := key.PublicKey().Bytes()
-	serverECDHEParams := make([]byte, 1+2+1+len(ecdhePublic))
+	serverECDHEParams := hkdf.GetBufOrMake(1 + 2 + 1 + len(ecdhePublic))
+	defer hkdf.PutBufIfSet(serverECDHEParams)
 	serverECDHEParams[0] = 3 // named curve
 	serverECDHEParams[1] = byte(curveID >> 8)
 	serverECDHEParams[2] = byte(curveID)

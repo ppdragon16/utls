@@ -104,20 +104,20 @@ func Expand[H fips140.Hash](h func() H, prk []byte, info string, keyLength int) 
 		panic("hkdf: requested key length too large")
 	}
 
-	out := getBufOrMake(keyLength)
+	out := GetBufOrMake(keyLength)
 
 	// For TLS 1.3, n is always 1 (keyLength <= hashLen).
 	// info is small — stack-allocated by the compiler in most cases.
 	var prev []byte
 	for i := 1; i <= n; i++ {
 		// T(i) = HMAC-Hash(PRK, T(i-1) || info || byte(i))
-		scratch := getBufOrMake(len(prev) + len(info) + 1)
+		scratch := GetBufOrMake(len(prev) + len(info) + 1)
 		scratch = scratch[:0]
 		scratch = append(scratch, prev...)
 		scratch = append(scratch, info...)
 		scratch = append(scratch, byte(i))
 		prev = hmacSum(kind, sampleHash, prk, scratch)
-		putBufIfSet(scratch)
+		PutBufIfSet(scratch)
 		copy(out[(i-1)*hashLen:], prev)
 	}
 
@@ -135,10 +135,10 @@ func hmacSum(k hashKind, sampleHash fips140.Hash, key, data []byte) []byte {
 	// skip RFC 2104's key-hashing step.
 
 	// Build padded ipad/opad.
-	ipad := getBufOrMake(blockSize)
-	opad := getBufOrMake(blockSize)
-	defer putBufIfSet(ipad)
-	defer putBufIfSet(opad)
+	ipad := GetBufOrMake(blockSize)
+	opad := GetBufOrMake(blockSize)
+	defer PutBufIfSet(ipad)
+	defer PutBufIfSet(opad)
 
 	for i := 0; i < len(key); i++ {
 		ipad[i] = key[i] ^ 0x36
@@ -166,14 +166,14 @@ func hmacSum(k hashKind, sampleHash fips140.Hash, key, data []byte) []byte {
 	return result
 }
 
-func getBufOrMake(size int) []byte {
+func GetBufOrMake(size int) []byte {
 	if GetBuffer != nil {
 		return GetBuffer(size)
 	}
 	return make([]byte, size)
 }
 
-func putBufIfSet(buf []byte) {
+func PutBufIfSet(buf []byte) {
 	if PutBuffer != nil && buf != nil {
 		PutBuffer(buf)
 	}
