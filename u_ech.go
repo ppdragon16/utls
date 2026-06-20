@@ -71,9 +71,8 @@ func (g *GREASEEncryptedClientHelloExtension) init() error {
 		// to generate new random bytes for config_id for each new ClientHello,
 		// but reuse the same config_id for HRR.
 		if len(g.CandidateConfigIds) == 0 {
-			var b []byte = make([]byte, 1)
-			_, err := rand.Read(b[:])
-			if err != nil {
+			var b [1]byte
+			if _, err := rand.Read(b[:]); err != nil {
 				initErr = fmt.Errorf("error generating random byte for config_id: %w", err)
 				return
 			}

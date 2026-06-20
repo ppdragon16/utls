@@ -278,10 +278,12 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			}
 
 			confTranscript := cloneHash(hs.echContext.innerTranscript, hs.suite.hash)
-			hrrHello := make([]byte, len(hs.serverHello.original))
+			hrrBuf := hkdf.GetBufOrMake(len(hs.serverHello.original))
+			hrrHello := hrrBuf[:len(hs.serverHello.original)]
 			copy(hrrHello, hs.serverHello.original)
 			hrrHello = bytes.Replace(hrrHello, hs.serverHello.encryptedClientHello, make([]byte, 8), 1)
 			confTranscript.Write(hrrHello)
+			hkdf.PutBufIfSet(hrrBuf)
 			acceptConfirmation := tls13.ExpandLabel(hs.suite.hash.New,
 				hkdf.Extract(hs.suite.hash.New, hs.echContext.innerHello.random, nil),
 				"hrr ech accept confirmation",

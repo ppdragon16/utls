@@ -729,7 +729,7 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 	c := hs.c
 
 	if hs.echContext != nil {
-		copy(hs.hello.random[32-8:], make([]byte, 8))
+		clear(hs.hello.random[32-8:])
 		echTranscript := cloneHash(hs.transcript, hs.suite.hash)
 		echTranscript.Write(hs.clientHello.original)
 		if err := transcriptMsg(hs.hello, echTranscript); err != nil {

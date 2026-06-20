@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/refraction-networking/utls/internal/hkdf"
 	"github.com/refraction-networking/utls/internal/hpke"
 
 	"golang.org/x/crypto/cryptobyte"
@@ -426,7 +427,10 @@ func computeAndUpdateOuterECHExtension(outer, inner *clientHelloMsg, ech *echCli
 	// bytes), so we have hardcoded it here. If we add support for another AEAD
 	// with a different tag length, we will need to change this.
 	encryptedLen := len(encodedInner) + 16 // AEAD tag length
-	outer.encryptedClientHello, err = generateOuterECHExt(ech.config.ConfigID, ech.kdfID, ech.aeadID, encapKey, make([]byte, encryptedLen))
+	payloadPlaceholder := hkdf.GetBufOrMake(encryptedLen)
+	defer hkdf.PutBufIfSet(payloadPlaceholder)
+	clear(payloadPlaceholder)
+	outer.encryptedClientHello, err = generateOuterECHExt(ech.config.ConfigID, ech.kdfID, ech.aeadID, encapKey, payloadPlaceholder)
 	if err != nil {
 		return err
 	}

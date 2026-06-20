@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"hash"
 
+	"github.com/refraction-networking/utls/internal/hkdf"
 	"github.com/refraction-networking/utls/internal/tls12"
 )
 
@@ -54,13 +55,15 @@ func prf10(secret []byte, label string, seed []byte, keyLen int) []byte {
 	hashSHA1 := sha1.New
 	hashMD5 := md5.New
 
-	labelAndSeed := make([]byte, len(label)+len(seed))
+	labelAndSeed := hkdf.GetBufOrMake(len(label) + len(seed))
+	defer hkdf.PutBufIfSet(labelAndSeed)
 	copy(labelAndSeed, label)
 	copy(labelAndSeed[len(label):], seed)
 
 	s1, s2 := splitPreMasterSecret(secret)
 	pHash(result, s1, labelAndSeed, hashMD5)
-	result2 := make([]byte, len(result))
+	result2 := hkdf.GetBufOrMake(len(result))
+	defer hkdf.PutBufIfSet(result2)
 	pHash(result2, s2, labelAndSeed, hashSHA1)
 
 	for i, b := range result2 {
@@ -279,7 +282,9 @@ func ekmFromMasterSecret(version uint16, suite *cipherSuite, masterSecret, clien
 		if context != nil {
 			seedLen += 2 + len(context)
 		}
-		seed := make([]byte, 0, seedLen)
+		seedBuf := hkdf.GetBufOrMake(seedLen)
+		defer hkdf.PutBufIfSet(seedBuf)
+		seed := seedBuf[:0]
 
 		seed = append(seed, clientRandom...)
 		seed = append(seed, serverRandom...)
