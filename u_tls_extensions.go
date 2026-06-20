@@ -121,13 +121,25 @@ type TLSExtensionJSON interface {
 
 // SNIExtension implements server_name (0)
 type SNIExtension struct {
-	ServerName string // not an array because go crypto/tls doesn't support multiple SNIs
+	ServerName  string // not an array because go crypto/tls doesn't support multiple SNIs
+	hostName    string // cached result of hostnameInSNI(ServerName)
+	hostNameSet bool   // true if hostName has been computed
+}
+
+// getHost returns the validated SNI hostname, computed once from ServerName.
+func (e *SNIExtension) getHost() string {
+	if e.hostNameSet {
+		return e.hostName
+	}
+	e.hostName = hostnameInSNI(e.ServerName)
+	e.hostNameSet = true
+	return e.hostName
 }
 
 func (e *SNIExtension) Len() int {
 	// Literal IP addresses, absolute FQDNs, and empty strings are not permitted as SNI values.
 	// See RFC 6066, Section 3.
-	hostName := hostnameInSNI(e.ServerName)
+	hostName := e.getHost()
 	if len(hostName) == 0 {
 		return 0
 	}
@@ -137,11 +149,12 @@ func (e *SNIExtension) Len() int {
 func (e *SNIExtension) Read(b []byte) (int, error) {
 	// Literal IP addresses, absolute FQDNs, and empty strings are not permitted as SNI values.
 	// See RFC 6066, Section 3.
-	hostName := hostnameInSNI(e.ServerName)
+	hostName := e.getHost()
 	if len(hostName) == 0 {
 		return 0, io.EOF
 	}
-	if len(b) < e.Len() {
+	sniExtensionLen := 4 + 2 + 1 + 2 + len(hostName)
+	if len(b) < sniExtensionLen {
 		return 0, io.ErrShortBuffer
 	}
 	// RFC 3546, section 3.1
@@ -155,7 +168,7 @@ func (e *SNIExtension) Read(b []byte) (int, error) {
 	b[7] = byte(len(hostName) >> 8)
 	b[8] = byte(len(hostName))
 	copy(b[9:], []byte(hostName))
-	return e.Len(), io.EOF
+	return sniExtensionLen, io.EOF
 }
 
 func (e *SNIExtension) UnmarshalJSON(_ []byte) error {
@@ -202,7 +215,7 @@ func (e *SNIExtension) writeToUConn(uc *UConn) error {
 	if uc.config.EncryptedClientHelloConfigList == nil { // with ech, e.ServerName is the outer public name and should not be copied
 		uc.config.ServerName = e.ServerName
 	}
-	hostName := hostnameInSNI(e.ServerName)
+	hostName := e.getHost()
 	uc.HandshakeState.Hello.ServerName = hostName
 
 	return nil

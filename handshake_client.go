@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"net"
 	"slices"
 	"strings"
 	"time"
@@ -168,11 +167,11 @@ func (c *Conn) makeClientHello() (*clientHelloMsg, *keySharePrivateKeys, *echCli
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			seed := make([]byte, mlkem.SeedSize)
-			if _, err := io.ReadFull(config.rand(), seed); err != nil {
+			var seed [mlkem.SeedSize]byte
+			if _, err := io.ReadFull(config.rand(), seed[:]); err != nil {
 				return nil, nil, nil, err
 			}
-			keyShareKeys.mlkem, err = mlkem.NewDecapsulationKey768(seed)
+			keyShareKeys.mlkem, err = mlkem.NewDecapsulationKey768(seed[:])
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -1342,6 +1341,34 @@ func (c *Conn) clientSessionCacheKey() string {
 // hostnameInSNI converts name into an appropriate hostname for SNI.
 // Literal IP addresses and absolute FQDNs are not permitted as SNI values.
 // See RFC 6066, Section 3.
+// isIP reports whether s is a literal IP address. It avoids the allocation
+// of net.ParseIP on the hot path of hostnameInSNI.
+func isIP(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// IPv6: contains ':' (brackets and zone ID are already stripped by caller).
+	if strings.IndexByte(s, ':') >= 0 {
+		return true
+	}
+	// IPv4: all bytes must be digits or dots, no empty segments,
+	// and at least one dot is present.
+	hasDot := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '.' {
+			// leading, trailing, or consecutive dots are invalid.
+			if i == 0 || i == len(s)-1 || s[i-1] == '.' {
+				return false
+			}
+			hasDot = true
+		} else if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return hasDot
+}
+
 func hostnameInSNI(name string) string {
 	host := name
 	if len(host) > 0 && host[0] == '[' && host[len(host)-1] == ']' {
@@ -1350,7 +1377,7 @@ func hostnameInSNI(name string) string {
 	if i := strings.LastIndex(host, "%"); i > 0 {
 		host = host[:i]
 	}
-	if net.ParseIP(host) != nil {
+	if isIP(host) {
 		return ""
 	}
 	for len(name) > 0 && name[len(name)-1] == '.' {

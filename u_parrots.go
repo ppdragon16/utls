@@ -2788,9 +2788,9 @@ func (uconn *UConn) ApplyPreset(p *ClientHelloSpec) error {
 	}
 
 	// Currently, GREASE is assumed to come from BoringSSL
-	grease_bytes := make([]byte, 2*ssl_grease_last_index)
+	var grease_bytes [2 * ssl_grease_last_index]byte
 	grease_extensions_seen := 0
-	_, err = io.ReadFull(uconn.config.rand(), grease_bytes)
+	_, err = io.ReadFull(uconn.config.rand(), grease_bytes[:])
 	if err != nil {
 		return errors.New("tls: short read from Rand: " + err.Error())
 	}
@@ -2873,11 +2873,11 @@ func (uconn *UConn) ApplyPreset(p *ClientHelloSpec) error {
 					if err != nil {
 						return err
 					}
-					seed := make([]byte, mlkem.SeedSize)
-					if _, err := io.ReadFull(uconn.config.rand(), seed); err != nil {
+					var seed [mlkem.SeedSize]byte
+					if _, err := io.ReadFull(uconn.config.rand(), seed[:]); err != nil {
 						return err
 					}
-					mlkemKey, err := mlkem.NewDecapsulationKey768(seed)
+					mlkemKey, err := mlkem.NewDecapsulationKey768(seed[:])
 					if err != nil {
 						return err
 					}
@@ -2999,7 +2999,7 @@ func generateRandomizedSpec(
 
 	p.CipherSuites = removeRandomCiphers(r, shuffledSuites, id.Weights.CipherSuites_Remove_RandomCiphers)
 
-	sni := SNIExtension{serverName}
+	sni := SNIExtension{ServerName: serverName}
 	sessionTicket := SessionTicketExtension{}
 
 	sigAndHashAlgos := []SignatureScheme{
