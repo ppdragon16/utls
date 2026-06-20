@@ -634,7 +634,14 @@ func (uconn *UConn) MarshalClientHelloNoECH() error {
 		helloLen += 2 + extensionsLen // 2 bytes for extensions' length
 	}
 
-	raw := make([]byte, 0, helloLen+4)
+	if hello.Raw != nil {
+		putBuf(hello.Raw)
+		hello.Raw = nil
+	}
+
+	//raw := make([]byte, 0, helloLen+4)
+	rawBuf := getBuf(helloLen + 4)
+	raw := rawBuf[:0]
 	raw = append(raw, byte(typeClientHello))
 	raw = append(raw, byte(helloLen>>16), byte(helloLen>>8), byte(helloLen))
 	raw = binary.BigEndian.AppendUint16(raw, hello.Vers)
@@ -664,12 +671,22 @@ func (uconn *UConn) MarshalClientHelloNoECH() error {
 	}
 
 	if len(raw) != helloLen+4 {
+		putBuf(rawBuf)
 		return errors.New("utls: unexpected ClientHello length. Expected: " + strconv.Itoa(4+helloLen) +
 			". Got: " + strconv.Itoa(len(raw)))
 	}
 
 	hello.Raw = raw
 	return nil
+}
+
+func (uconn *UConn) Close() error {
+	hello := uconn.HandshakeState.Hello
+	if hello.Raw != nil {
+		putBuf(hello.Raw)
+		hello.Raw = nil
+	}
+	return uconn.Conn.Close()
 }
 
 // get current state of cipher and encrypt zeros to get keystream

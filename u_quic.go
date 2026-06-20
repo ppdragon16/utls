@@ -91,6 +91,7 @@ func (q *UQUICConn) Close() error {
 	for range q.conn.quic.blockedc {
 		// Wait for the handshake goroutine to return.
 	}
+	q.conn.Close()
 	return q.conn.handshakeErr
 }
 
