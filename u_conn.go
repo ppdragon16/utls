@@ -381,6 +381,17 @@ func (c *UConn) handshakeContext(ctx context.Context) (ret error) {
 	}
 	// [uTLS section ends]
 	c.handshakeErr = c.handshakeFn(handshakeCtx)
+
+	// Release key share keys after handshake — they are only needed during
+	// the TLS handshake (for ECDHE and ML-KEM decapsulation). Nil'ing them
+	// here allows the GC to reclaim ~8KB per connection immediately rather
+	// than retaining it for the entire connection lifetime.
+	if c.HandshakeState.State13.KeyShareKeys != nil {
+		c.HandshakeState.State13.KeyShareKeys.Mlkem = nil
+		c.HandshakeState.State13.KeyShareKeys.MlkemEcdhe = nil
+		c.HandshakeState.State13.KeyShareKeys.Ecdhe = nil
+	}
+
 	if c.handshakeErr == nil {
 		c.handshakes++
 	} else {
