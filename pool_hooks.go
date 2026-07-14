@@ -23,6 +23,7 @@ type BytesBuffer interface {
 	Write(p []byte) (int, error)
 	ReadFrom(r io.Reader) (int64, error)
 	Grow(n int)
+	Reset()
 	// Detach extracts the internal backing array and transfers ownership
 	// to the caller. The buffer is left empty and can be reused.
 	Detach() []byte

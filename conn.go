@@ -103,9 +103,9 @@ type Conn struct {
 
 	// input/output
 	in, out   halfConn
-	rawInput  BytesBuffer // raw input, starting with a record header
+	rawInput  BytesBuffer  // raw input, starting with a record header
 	input     bytes.Reader // application data waiting to be read, from rawInput.Next
-	hand      BytesBuffer // handshake data waiting to be read
+	hand      BytesBuffer  // handshake data waiting to be read
 	buffering bool         // whether records are buffered in sendBuf
 	sendBuf   []byte       // a buffer of records waiting to be sent
 
@@ -1434,6 +1434,8 @@ func (c *Conn) Read(b []byte) (int, error) {
 
 // Close closes the connection.
 func (c *Conn) Close() error {
+	defer c.rawInput.Reset()
+	defer c.hand.Reset()
 	// Interlock with Conn.Write above.
 	var x int32
 	for {
