@@ -103,11 +103,12 @@ type Conn struct {
 
 	// input/output
 	in, out   halfConn
-	rawInput  BytesBuffer  // raw input, starting with a record header
-	input     bytes.Reader // application data waiting to be read, from rawInput.Next
-	hand      BytesBuffer  // handshake data waiting to be read
-	buffering bool         // whether records are buffered in sendBuf
-	sendBuf   []byte       // a buffer of records waiting to be sent
+	rawInput  BytesBuffer                                  // raw input, starting with a record header
+	rawInputN interface{ ReadFromN(io.Reader, int) error } // rawInput if it supports zero-copy reads
+	input     bytes.Reader                                 // application data waiting to be read, from rawInput.Next
+	hand      BytesBuffer                                  // handshake data waiting to be read
+	buffering bool                                         // whether records are buffered in sendBuf
+	sendBuf   []byte                                       // a buffer of records waiting to be sent
 
 	// bytesSent counts the bytes of application data sent.
 	// packetsSent counts packets.
@@ -135,6 +136,7 @@ func NewTLSConn(conn net.Conn, config *Config, isClient bool) *Conn {
 	}
 	c.hand = NewBytesBuffer()
 	c.rawInput = NewBytesBuffer()
+	c.rawInputN, _ = c.rawInput.(interface{ ReadFromN(io.Reader, int) error })
 	return c
 }
 
@@ -814,6 +816,17 @@ func (c *Conn) retryReadRecord(expectChangeCipherSpec bool) error {
 // readFromUntil reads from r into c.rawInput until c.rawInput contains
 // at least n bytes or else returns an error.
 func (c *Conn) readFromUntil(r io.Reader, n int) error {
+	// Fast path: read directly into rawInput's backing array, no temp buffer.
+	if c.rawInputN != nil {
+		if err := c.rawInputN.ReadFromN(r, n); err != nil {
+			if err == io.EOF {
+				return io.ErrUnexpectedEOF
+			}
+			return err
+		}
+		return nil
+	}
+
 	if c.rawInput.Len() >= n {
 		return nil
 	}
