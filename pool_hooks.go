@@ -137,3 +137,17 @@ func PooledHashPut(h hash.Hash) {
 		sha384HashPool.Put(h)
 	}
 }
+
+// HKDFExtract implements HKDF-Extract(salt, IKM) -> PRK (RFC 5869, Section 2.2).
+// When SetBufferPool has been called, the temporary nil-salt allocation and
+// inner/outer HMAC hash objects are served from the pool.
+func HKDFExtract(h crypto.Hash, secret, salt []byte) []byte {
+	return hkdf.Extract(h, secret, salt)
+}
+
+// HKDFExpandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
+// When SetBufferPool has been called, the label buffer and inner HMAC
+// scratch are served from the pool.
+func HKDFExpandLabel(hash crypto.Hash, secret []byte, label string, context []byte, length int) []byte {
+	return tls13.ExpandLabel(hash, secret, label, context, length)
+}
