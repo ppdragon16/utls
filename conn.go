@@ -20,6 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/crypto/cryptobyte"
 )
 
 // A Conn represents a secured connection.
@@ -1058,7 +1060,18 @@ func (c *Conn) writeHandshakeRecord(msg handshakeMessage, transcript transcriptH
 	c.out.Lock()
 	defer c.out.Unlock()
 
-	data, err := msg.marshal()
+	// Use a pooled buffer so marshalTo's Builder appends stay within
+	// pre-allocated capacity, avoiding heap allocations. maxHandshake
+	// (65536) covers the vast majority of handshake messages. If a
+	// message exceeds the buffer, the Builder grows via append as
+	// usual — same as the old marshal() behavior.
+	buf := getBuf(maxHandshake)
+	defer putBuf(buf)
+	b := cryptobyte.NewBuilder(buf[:0])
+	if err := msg.marshalTo(b); err != nil {
+		return 0, err
+	}
+	data, err := b.Bytes()
 	if err != nil {
 		return 0, err
 	}

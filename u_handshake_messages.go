@@ -26,6 +26,16 @@ func (m *utlsCompressedCertificateMsg) marshal() ([]byte, error) {
 	}
 
 	var b cryptobyte.Builder
+	if err := m.marshalTo(&b); err != nil {
+		return nil, err
+	}
+
+	var err error
+	m.raw, err = b.Bytes()
+	return m.raw, err
+}
+
+func (m *utlsCompressedCertificateMsg) marshalTo(b *cryptobyte.Builder) error {
 	b.AddUint8(utlsTypeCompressedCertificate)
 	b.AddUint24LengthPrefixed(func(b *cryptobyte.Builder) {
 		b.AddUint16(m.algorithm)
@@ -35,9 +45,7 @@ func (m *utlsCompressedCertificateMsg) marshal() ([]byte, error) {
 		})
 	})
 
-	var err error
-	m.raw, err = b.Bytes()
-	return m.raw, err
+	return nil
 }
 
 func (m *utlsCompressedCertificateMsg) unmarshal(data []byte) bool {
@@ -83,8 +91,17 @@ func (m *utlsClientEncryptedExtensionsMsg) marshal() (x []byte, err error) {
 	}
 
 	var builder cryptobyte.Builder
-	builder.AddUint8(typeEncryptedExtensions)
-	builder.AddUint24LengthPrefixed(func(body *cryptobyte.Builder) {
+	if err := m.marshalTo(&builder); err != nil {
+		return nil, err
+	}
+
+	m.raw, err = builder.Bytes()
+	return m.raw, err
+}
+
+func (m *utlsClientEncryptedExtensionsMsg) marshalTo(b *cryptobyte.Builder) error {
+	b.AddUint8(typeEncryptedExtensions)
+	b.AddUint24LengthPrefixed(func(body *cryptobyte.Builder) {
 		body.AddUint16LengthPrefixed(func(extensions *cryptobyte.Builder) {
 			if m.applicationSettingsCodepoint != 0 {
 				extensions.AddUint16(m.applicationSettingsCodepoint)
@@ -101,8 +118,7 @@ func (m *utlsClientEncryptedExtensionsMsg) marshal() (x []byte, err error) {
 		})
 	})
 
-	m.raw, err = builder.Bytes()
-	return m.raw, err
+	return nil
 }
 
 func (m *utlsClientEncryptedExtensionsMsg) unmarshal(data []byte) bool {

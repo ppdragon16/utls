@@ -15,6 +15,8 @@ import (
 	"testing"
 	"testing/quick"
 	"time"
+
+	"golang.org/x/crypto/cryptobyte"
 )
 
 var tests = []handshakeMessage{
@@ -436,6 +438,14 @@ func (*SessionState) Generate(rand *rand.Rand, size int) reflect.Value {
 }
 
 func (s *SessionState) marshal() ([]byte, error) { return s.Bytes() }
+func (s *SessionState) marshalTo(b *cryptobyte.Builder) error {
+	data, err := s.marshal()
+	if err != nil {
+		return err
+	}
+	b.AddBytes(data)
+	return nil
+}
 func (s *SessionState) unmarshal(b []byte) bool {
 	ss, err := ParseSessionState(b)
 	if err != nil {

@@ -217,7 +217,11 @@ func encodeInnerClientHello(inner *clientHelloMsg, maxNameLength int) ([]byte, e
 
 // func encodeInnerClientHello(inner *clientHelloMsg, maxNameLength int) ([]byte, error) {
 func encodeInnerClientHelloReorderOuterExts(inner *clientHelloMsg, maxNameLength int, outerExts []uint16) ([]byte, error) { // uTLS
-	h, err := inner.marshalMsgReorderOuterExts(true, outerExts)
+	var b cryptobyte.Builder
+	if err := inner.marshalMsgReorderOuterExtsTo(&b, true, outerExts); err != nil {
+		return nil, err
+	}
+	h, err := b.Bytes()
 	if err != nil {
 		return nil, err
 	}

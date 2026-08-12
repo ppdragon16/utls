@@ -26,6 +26,8 @@ import (
 	"time"
 	_ "unsafe" // for linkname
 
+	"golang.org/x/crypto/cryptobyte"
+
 	"github.com/refraction-networking/utls/internal/fips140tls"
 )
 
@@ -1632,6 +1634,7 @@ func (c *Certificate) leaf() (*x509.Certificate, error) {
 
 type handshakeMessage interface {
 	marshal() ([]byte, error)
+	marshalTo(*cryptobyte.Builder) error
 	unmarshal([]byte) bool
 }
 
