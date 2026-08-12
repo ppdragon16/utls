@@ -108,7 +108,7 @@ func Extract(h crypto.Hash, secret, salt []byte) []byte {
 		// Use zeros of hash length as the default salt.
 		salt = make([]byte, kind.size())
 	}
-	return hmacSum(kind, salt, secret)
+	return hmacSum(kind, salt, secret, nil)
 }
 
 // Expand implements HKDF-Expand(PRK, info, L) -> OKM (RFC 5869, Section 2.3).
@@ -126,6 +126,9 @@ func Expand(h crypto.Hash, prk []byte, info string, keyLength int) []byte {
 
 	// For TLS 1.3, n is always 1 (keyLength <= hashLen).
 	// info is small — stack-allocated by the compiler in most cases.
+	// prevBuf is reused across iterations: the old prev is fully copied
+	// into scratch before hmacSum overwrites prevBuf, so no aliasing issue.
+	var prevBuf []byte
 	var prev []byte
 	for i := 1; i <= n; i++ {
 		// T(i) = HMAC-Hash(PRK, T(i-1) || info || byte(i))
@@ -134,17 +137,25 @@ func Expand(h crypto.Hash, prk []byte, info string, keyLength int) []byte {
 		scratch = append(scratch, prev...)
 		scratch = append(scratch, info...)
 		scratch = append(scratch, byte(i))
-		prev = hmacSum(kind, prk, scratch)
+		if prevBuf == nil {
+			prevBuf = GetBufOrMake(hashLen)[:0]
+		}
+		prev = hmacSum(kind, prk, scratch, prevBuf)
 		PutBufIfSet(scratch)
 		copy(out[(i-1)*hashLen:], prev)
 	}
+	PutBufIfSet(prevBuf)
 
 	return out[:keyLength]
 }
 
-// hmacSum computes HMAC-Hash(key, data) and returns the MAC.
-func hmacSum(k hashKind, key, data []byte) []byte {
+// hmacSum computes HMAC-Hash(key, data) and writes the MAC to out.
+// If out has sufficient capacity, the result is appended in-place without
+// allocation; otherwise a new allocation occurs. The inner hash scratch is
+// always obtained from the buffer pool.
+func hmacSum(k hashKind, key, data, out []byte) []byte {
 	blockSize := k.blockSize()
+	hashLen := k.size()
 
 	// For TLS 1.3, all HMAC keys are hash outputs (<= 48 bytes) which
 	// never exceed SHA-256's block size (64) or SHA-384's (128), so we
@@ -165,18 +176,21 @@ func hmacSum(k hashKind, key, data []byte) []byte {
 		opad[i] = 0x5c
 	}
 
-	// Inner hash: H(ipad || data).
+	// Inner hash: H(ipad || data). Sum writes into a pooled scratch buffer
+	// to avoid allocation; the buffer is returned after outer.Write consumes it.
 	inner := getHashFromPool(k)
 	inner.Write(ipad)
 	inner.Write(data)
-	innerSum := inner.Sum(nil)
+	innerBuf := GetBufOrMake(hashLen)[:0]
+	innerSum := inner.Sum(innerBuf)
 	putHashToPool(inner, k)
 
 	// Outer hash: H(opad || innerSum).
 	outer := getHashFromPool(k)
 	outer.Write(opad)
 	outer.Write(innerSum)
-	result := outer.Sum(nil)
+	PutBufIfSet(innerBuf) // innerSum no longer needed
+	result := outer.Sum(out)
 	putHashToPool(outer, k)
 
 	return result
