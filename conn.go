@@ -987,13 +987,6 @@ func (c *Conn) flush() (int, error) {
 	return n, err
 }
 
-// outBufPool pools the record-sized scratch buffers used by writeRecordLocked.
-var outBufPool = sync.Pool{
-	New: func() any {
-		return new([]byte)
-	},
-}
-
 // writeRecordLocked writes a TLS record with the given type and payload to the
 // connection and updates the record layer state.
 func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
@@ -1010,17 +1003,8 @@ func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 		return len(data), nil
 	}
 
-	outBufPtr := outBufPool.Get().(*[]byte)
-	outBuf := *outBufPtr
-	defer func() {
-		// You might be tempted to simplify this by just passing &outBuf to Put,
-		// but that would make the local copy of the outBuf slice header escape
-		// to the heap, causing an allocation. Instead, we keep around the
-		// pointer to the slice header returned by Get, which is already on the
-		// heap, and overwrite and return that.
-		*outBufPtr = outBuf
-		outBufPool.Put(outBufPtr)
-	}()
+	outScratch := getBuf(recordHeaderLen + maxCiphertext + 256)
+	defer func() { putBuf(outScratch) }()
 
 	var n int
 	for len(data) > 0 {
@@ -1029,7 +1013,7 @@ func (c *Conn) writeRecordLocked(typ recordType, data []byte) (int, error) {
 			m = maxPayload
 		}
 
-		_, outBuf = sliceForAppend(outBuf[:0], recordHeaderLen)
+		outBuf := outScratch[:recordHeaderLen]
 		outBuf[0] = byte(typ)
 		vers := c.vers
 		if vers == 0 {
