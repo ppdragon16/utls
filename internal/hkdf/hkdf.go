@@ -122,7 +122,10 @@ func Expand(h crypto.Hash, prk []byte, info string, keyLength int) []byte {
 		panic("hkdf: requested key length too large")
 	}
 
-	out := GetBufOrMake(keyLength)
+	// out is always heap-allocated: the caller receives a long-lived secret
+	// or key that lives for the connection lifetime. Using a pooled buffer
+	// here would leak the buffer since callers never Put it back.
+	out := make([]byte, keyLength)
 
 	// For TLS 1.3, n is always 1 (keyLength <= hashLen).
 	// info is small — stack-allocated by the compiler in most cases.
@@ -146,7 +149,7 @@ func Expand(h crypto.Hash, prk []byte, info string, keyLength int) []byte {
 	}
 	PutBufIfSet(prevBuf)
 
-	return out[:keyLength]
+	return out
 }
 
 // hmacSum computes HMAC-Hash(key, data) and writes the MAC to out.
