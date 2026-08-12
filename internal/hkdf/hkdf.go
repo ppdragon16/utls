@@ -7,6 +7,7 @@
 package hkdf
 
 import (
+	"crypto"
 	"crypto/sha256"
 	"crypto/sha512"
 	fips140 "hash"
@@ -32,6 +33,40 @@ const (
 	hashSHA256 hashKind = iota // Size = 32, BlockSize = 64
 	hashSHA384                 // Size = 48, BlockSize = 128
 )
+
+func (k hashKind) size() int {
+	switch k {
+	case hashSHA256:
+		return 32
+	case hashSHA384:
+		return 48
+	default:
+		panic("hkdf: unknown hash kind")
+	}
+}
+
+func (k hashKind) blockSize() int {
+	switch k {
+	case hashSHA256:
+		return 64
+	case hashSHA384:
+		return 128
+	default:
+		panic("hkdf: unknown hash kind")
+	}
+}
+
+// hashKindForHash maps crypto.Hash to the internal hashKind used by the pool.
+func hashKindForHash(h crypto.Hash) hashKind {
+	switch h {
+	case crypto.SHA256:
+		return hashSHA256
+	case crypto.SHA384:
+		return hashSHA384
+	default:
+		panic("hkdf: unsupported hash")
+	}
+}
 
 // getHashFromPool returns a reset hash from the pool.
 func getHashFromPool(k hashKind) fips140.Hash {
@@ -66,38 +101,21 @@ func putHashToPool(h fips140.Hash, k hashKind) {
 	}
 }
 
-// detectHashKind calls the hash constructor once and determines the pool
-// from the hash size. The returned hash is kept alive for the caller to
-// reuse (e.g. to read BlockSize/Size without another allocation).
-func detectHashKind[H fips140.Hash](h func() H) (hashKind, H) {
-	sample := h()
-	switch sample.Size() {
-	case 32:
-		return hashSHA256, sample
-	case 48:
-		return hashSHA384, sample
-	default:
-		panic("hkdf: unsupported hash size")
-	}
-}
-
 // Extract implements HKDF-Extract(salt, IKM) -> PRK (RFC 5869, Section 2.2).
-func Extract[H fips140.Hash](h func() H, secret, salt []byte) []byte {
-	kind, sampleHash := detectHashKind(h)
+func Extract(h crypto.Hash, secret, salt []byte) []byte {
+	kind := hashKindForHash(h)
 	if salt == nil {
 		// Use zeros of hash length as the default salt.
-		salt = make([]byte, sampleHash.Size())
+		salt = make([]byte, kind.size())
 	}
-	prk := hmacSum(kind, sampleHash, salt, secret)
-	putHashToPool(sampleHash, kind)
-	return prk
+	return hmacSum(kind, salt, secret)
 }
 
 // Expand implements HKDF-Expand(PRK, info, L) -> OKM (RFC 5869, Section 2.3).
 // For TLS 1.3, L is always <= hash length so n is always 1.
-func Expand[H fips140.Hash](h func() H, prk []byte, info string, keyLength int) []byte {
-	kind, sampleHash := detectHashKind(h)
-	hashLen := sampleHash.Size()
+func Expand(h crypto.Hash, prk []byte, info string, keyLength int) []byte {
+	kind := hashKindForHash(h)
+	hashLen := kind.size()
 
 	n := (keyLength + hashLen - 1) / hashLen
 	if n > 255 {
@@ -116,19 +134,17 @@ func Expand[H fips140.Hash](h func() H, prk []byte, info string, keyLength int) 
 		scratch = append(scratch, prev...)
 		scratch = append(scratch, info...)
 		scratch = append(scratch, byte(i))
-		prev = hmacSum(kind, sampleHash, prk, scratch)
+		prev = hmacSum(kind, prk, scratch)
 		PutBufIfSet(scratch)
 		copy(out[(i-1)*hashLen:], prev)
 	}
 
-	putHashToPool(sampleHash, kind)
 	return out[:keyLength]
 }
 
 // hmacSum computes HMAC-Hash(key, data) and returns the MAC.
-// sampleHash is NOT modified; it is only used for BlockSize()/Size().
-func hmacSum(k hashKind, sampleHash fips140.Hash, key, data []byte) []byte {
-	blockSize := sampleHash.BlockSize()
+func hmacSum(k hashKind, key, data []byte) []byte {
+	blockSize := k.blockSize()
 
 	// For TLS 1.3, all HMAC keys are hash outputs (<= 48 bytes) which
 	// never exceed SHA-256's block size (64) or SHA-384's (128), so we

@@ -541,7 +541,7 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 	hello.pskBinders = [][]byte{make([]byte, cipherSuite.hash.Size())}
 
 	// Compute the PSK binders. See RFC 8446, Section 4.2.11.2.
-	earlySecret = tls13.NewEarlySecret(cipherSuite.hash.New, session.secret)
+	earlySecret = tls13.NewEarlySecret(cipherSuite.hash, session.secret)
 	binderKey = earlySecret.ResumptionBinderKey()
 	// [UTLS SECTION START]
 	if c.utls.sessionController != nil && !c.utls.sessionController.shouldLoadSessionWriteBinders() {

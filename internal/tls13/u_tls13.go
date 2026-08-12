@@ -1,11 +1,11 @@
 package tls13
 
-import fips140 "hash"
+import "crypto"
 
-func NewEarlySecretFromSecret[H fips140.Hash](hash func() H, secret []byte) *EarlySecret {
+func NewEarlySecretFromSecret(hash crypto.Hash, secret []byte) *EarlySecret {
 	return &EarlySecret{
 		secret: secret,
-		hash:   func() fips140.Hash { return hash() },
+		hash:   hash,
 	}
 }
 
@@ -16,10 +16,10 @@ func (s *EarlySecret) Secret() []byte {
 	return nil
 }
 
-func NewMasterSecretFromSecret[H fips140.Hash](hash func() H, secret []byte) *MasterSecret {
+func NewMasterSecretFromSecret(hash crypto.Hash, secret []byte) *MasterSecret {
 	return &MasterSecret{
 		secret: secret,
-		hash:   func() fips140.Hash { return hash() },
+		hash:   hash,
 	}
 }
 

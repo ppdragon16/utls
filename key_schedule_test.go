@@ -6,6 +6,7 @@ package tls
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -38,7 +39,7 @@ func TestACVPVectors(t *testing.T) {
 	// the hash in sequence to develop the transcript.
 	transcript := sha256.New()
 
-	es := tls13.NewEarlySecret(sha256.New, psk)
+	es := tls13.NewEarlySecret(crypto.SHA256, psk)
 
 	transcript.Write(helloClientRandom)
 

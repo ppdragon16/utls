@@ -21,13 +21,13 @@ import (
 // nextTrafficSecret generates the next traffic secret, given the current one,
 // according to RFC 8446, Section 7.2.
 func (c *cipherSuiteTLS13) nextTrafficSecret(trafficSecret []byte) []byte {
-	return tls13.ExpandLabel(c.hash.New, trafficSecret, "traffic upd", nil, c.hash.Size())
+	return tls13.ExpandLabel(c.hash, trafficSecret, "traffic upd", nil, c.hash.Size())
 }
 
 // trafficKey generates traffic keys according to RFC 8446, Section 7.3.
 func (c *cipherSuiteTLS13) trafficKey(trafficSecret []byte) (key, iv []byte) {
-	key = tls13.ExpandLabel(c.hash.New, trafficSecret, "key", nil, c.keyLen)
-	iv = tls13.ExpandLabel(c.hash.New, trafficSecret, "iv", nil, aeadNonceLength)
+	key = tls13.ExpandLabel(c.hash, trafficSecret, "key", nil, c.keyLen)
+	iv = tls13.ExpandLabel(c.hash, trafficSecret, "iv", nil, aeadNonceLength)
 	return
 }
 
@@ -35,7 +35,7 @@ func (c *cipherSuiteTLS13) trafficKey(trafficSecret []byte) (key, iv []byte) {
 // to RFC 8446, Section 4.4.4. See sections 4.4 and 4.2.11.2 for the baseKey
 // selection.
 func (c *cipherSuiteTLS13) finishedHash(baseKey []byte, transcript hash.Hash) []byte {
-	finishedKey := tls13.ExpandLabel(c.hash.New, baseKey, "finished", nil, c.hash.Size())
+	finishedKey := tls13.ExpandLabel(c.hash, baseKey, "finished", nil, c.hash.Size())
 	return hmacPooled(c.hash, finishedKey, transcript.Sum(nil))
 }
 

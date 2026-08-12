@@ -424,7 +424,7 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			}
 		}
 
-		hs.earlySecret = tls13.NewEarlySecret(hs.suite.hash.New, sessionState.secret)
+		hs.earlySecret = tls13.NewEarlySecret(hs.suite.hash, sessionState.secret)
 		binderKey := hs.earlySecret.ResumptionBinderKey()
 		// Clone the transcript in case a HelloRetryRequest was recorded.
 		transcript := cloneHash(hs.transcript, hs.suite.hash)
@@ -579,12 +579,12 @@ func (hs *serverHandshakeStateTLS13) doHelloRetryRequest(selectedGroup CurveID) 
 		if err := transcriptMsg(helloRetryRequest, confTranscript); err != nil {
 			return nil, err
 		}
-		acceptConfirmation := tls13.ExpandLabel(hs.suite.hash.New,
-			hkdf.Extract(hs.suite.hash.New, hs.clientHello.random, nil),
+		acceptConfirmation := tls13.ExpandLabel(
+			hs.suite.hash,
+			hkdf.Extract(hs.suite.hash, hs.clientHello.random, nil),
 			"hrr ech accept confirmation",
 			confTranscript.Sum(nil),
-			8,
-		)
+			8)
 		helloRetryRequest.encryptedClientHello = acceptConfirmation
 	}
 
@@ -742,12 +742,12 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 			return err
 		}
 		// compute the acceptance message
-		acceptConfirmation := tls13.ExpandLabel(hs.suite.hash.New,
-			hkdf.Extract(hs.suite.hash.New, hs.clientHello.random, nil),
+		acceptConfirmation := tls13.ExpandLabel(
+			hs.suite.hash,
+			hkdf.Extract(hs.suite.hash, hs.clientHello.random, nil),
 			"ech accept confirmation",
 			echTranscript.Sum(nil),
-			8,
-		)
+			8)
 		copy(hs.hello.random[32-8:], acceptConfirmation)
 	}
 
@@ -765,7 +765,7 @@ func (hs *serverHandshakeStateTLS13) sendServerParameters() error {
 
 	earlySecret := hs.earlySecret
 	if earlySecret == nil {
-		earlySecret = tls13.NewEarlySecret(hs.suite.hash.New, nil)
+		earlySecret = tls13.NewEarlySecret(hs.suite.hash, nil)
 	}
 	hs.handshakeSecret = earlySecret.HandshakeSecret(hs.sharedKey)
 
@@ -990,7 +990,7 @@ func (c *Conn) sendSessionTicket(earlyData bool, extra [][]byte) error {
 	}
 	// ticket_nonce, which must be unique per connection, is always left at
 	// zero because we only ever send one ticket per connection.
-	psk := tls13.ExpandLabel(suite.hash.New, c.resumptionSecret, "resumption",
+	psk := tls13.ExpandLabel(suite.hash, c.resumptionSecret, "resumption",
 		nil, suite.hash.Size())
 
 	m := new(newSessionTicketMsgTLS13)

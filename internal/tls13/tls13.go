@@ -7,6 +7,7 @@
 package tls13
 
 import (
+	"crypto"
 	fips140 "hash"
 
 	"github.com/refraction-networking/utls/internal/byteorder"
@@ -26,7 +27,7 @@ var PutBuffer func([]byte)
 // its own.
 
 // ExpandLabel implements HKDF-Expand-Label from RFC 8446, Section 7.1.
-func ExpandLabel[H fips140.Hash](hash func() H, secret []byte, label string, context []byte, length int) []byte {
+func ExpandLabel(hash crypto.Hash, secret []byte, label string, context []byte, length int) []byte {
 	if len("tls13 ")+len(label) > 255 || len(context) > 255 {
 		panic("tls13: label or context too long")
 	}
@@ -50,16 +51,47 @@ func ExpandLabel[H fips140.Hash](hash func() H, secret []byte, label string, con
 	return result
 }
 
-func extract[H fips140.Hash](hash func() H, newSecret, currentSecret []byte) []byte {
+func extract(hash crypto.Hash, newSecret, currentSecret []byte) []byte {
 	if newSecret == nil {
-		newSecret = make([]byte, hash().Size())
+		newSecret = make([]byte, hash.Size())
 	}
 	return hkdf.Extract(hash, newSecret, currentSecret)
 }
 
-func deriveSecret[H fips140.Hash](hash func() H, secret []byte, label string, transcript fips140.Hash) []byte {
+// emptySHA256 is SHA-256(""), the hash of the empty string.
+var emptySHA256 = [32]byte{
+	0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14,
+	0x9a, 0xfb, 0xf4, 0xc8, 0x99, 0x6f, 0xb9, 0x24,
+	0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b, 0x93, 0x4c,
+	0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55,
+}
+
+// emptySHA384 is SHA-384(""), the hash of the empty string.
+var emptySHA384 = [48]byte{
+	0x38, 0xb0, 0x60, 0xa7, 0x51, 0xac, 0x96, 0x38,
+	0x4c, 0xd9, 0x32, 0x7e, 0xb1, 0xb1, 0xe3, 0x6a,
+	0x21, 0xfd, 0xb7, 0x11, 0x14, 0xbe, 0x07, 0x43,
+	0x4c, 0x0c, 0xc7, 0xbf, 0x63, 0xf6, 0xe1, 0xda,
+	0x27, 0x4e, 0xde, 0xbf, 0xe7, 0x6f, 0x65, 0xfb,
+	0xd5, 0x1a, 0xd2, 0xf1, 0x48, 0x98, 0xb9, 0x5b,
+}
+
+// emptyHash returns the digest of the empty string for the given hash function.
+// The returned slice aliases a global read-only array — do not modify it.
+func emptyHash(h crypto.Hash) []byte {
+	switch h {
+	case crypto.SHA256:
+		return emptySHA256[:]
+	case crypto.SHA384:
+		return emptySHA384[:]
+	default:
+		panic("tls13: unsupported hash")
+	}
+}
+
+func deriveSecret(hash crypto.Hash, secret []byte, label string, transcript fips140.Hash) []byte {
 	if transcript == nil {
-		transcript = hash()
+		return ExpandLabel(hash, secret, label, emptyHash(hash), hash.Size())
 	}
 	return ExpandLabel(hash, secret, label, transcript.Sum(nil), transcript.Size())
 }
@@ -78,13 +110,13 @@ const (
 
 type EarlySecret struct {
 	secret []byte
-	hash   func() fips140.Hash
+	hash   crypto.Hash
 }
 
-func NewEarlySecret[H fips140.Hash](hash func() H, psk []byte) *EarlySecret {
+func NewEarlySecret(hash crypto.Hash, psk []byte) *EarlySecret {
 	return &EarlySecret{
 		secret: extract(hash, psk, nil),
-		hash:   func() fips140.Hash { return hash() },
+		hash:   hash,
 	}
 }
 
@@ -100,7 +132,7 @@ func (s *EarlySecret) ClientEarlyTrafficSecret(transcript fips140.Hash) []byte {
 
 type HandshakeSecret struct {
 	secret []byte
-	hash   func() fips140.Hash
+	hash   crypto.Hash
 }
 
 func (s *EarlySecret) HandshakeSecret(sharedSecret []byte) *HandshakeSecret {
@@ -125,7 +157,7 @@ func (s *HandshakeSecret) ServerHandshakeTrafficSecret(transcript fips140.Hash) 
 
 type MasterSecret struct {
 	secret []byte
-	hash   func() fips140.Hash
+	hash   crypto.Hash
 }
 
 func (s *HandshakeSecret) MasterSecret() *MasterSecret {
@@ -156,7 +188,7 @@ func (s *MasterSecret) ResumptionMasterSecret(transcript fips140.Hash) []byte {
 
 type ExporterMasterSecret struct {
 	secret []byte
-	hash   func() fips140.Hash
+	hash   crypto.Hash
 }
 
 // ExporterMasterSecret derives the exporter_master_secret from the master secret
@@ -179,7 +211,7 @@ func (s *EarlySecret) EarlyExporterMasterSecret(transcript fips140.Hash) *Export
 
 func (s *ExporterMasterSecret) Exporter(label string, context []byte, length int) []byte {
 	secret := deriveSecret(s.hash, s.secret, label, nil)
-	h := s.hash()
+	h := s.hash.New()
 	h.Write(context)
 	return ExpandLabel(s.hash, secret, "exporter", h.Sum(nil), length)
 }

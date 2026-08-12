@@ -113,12 +113,12 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		confTranscript.Write(hs.serverHello.original[:30])
 		confTranscript.Write(make([]byte, 8))
 		confTranscript.Write(hs.serverHello.original[38:])
-		acceptConfirmation := tls13.ExpandLabel(hs.suite.hash.New,
-			hkdf.Extract(hs.suite.hash.New, hs.echContext.innerHello.random, nil),
+		acceptConfirmation := tls13.ExpandLabel(
+			hs.suite.hash,
+			hkdf.Extract(hs.suite.hash, hs.echContext.innerHello.random, nil),
 			"ech accept confirmation",
 			confTranscript.Sum(nil),
-			8,
-		)
+			8)
 		if subtle.ConstantTimeCompare(acceptConfirmation, hs.serverHello.random[len(hs.serverHello.random)-8:]) == 1 {
 			hs.hello = hs.echContext.innerHello
 			c.serverName = c.config.ServerName
@@ -296,8 +296,8 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			hrrHello = bytes.Replace(hrrHello, hs.serverHello.encryptedClientHello, make([]byte, 8), 1)
 			confTranscript.Write(hrrHello)
 			hkdf.PutBufIfSet(hrrBuf)
-			acceptConfirmation := tls13.ExpandLabel(hs.suite.hash.New,
-				hkdf.Extract(hs.suite.hash.New, hs.echContext.innerHello.random, nil),
+			acceptConfirmation := tls13.ExpandLabel(hs.suite.hash,
+				hkdf.Extract(hs.suite.hash, hs.echContext.innerHello.random, nil),
 				"hrr ech accept confirmation",
 				confTranscript.Sum(nil),
 				8,
@@ -663,7 +663,7 @@ func (hs *clientHandshakeStateTLS13) establishHandshakeKeys() error {
 
 	earlySecret := hs.earlySecret
 	if !hs.usingPSK {
-		earlySecret = tls13.NewEarlySecret(hs.suite.hash.New, nil)
+		earlySecret = tls13.NewEarlySecret(hs.suite.hash, nil)
 	}
 
 	handshakeSecret := earlySecret.HandshakeSecret(sharedKey)
@@ -1071,7 +1071,7 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 	if cipherSuite == nil || c.resumptionSecret == nil {
 		return c.sendAlert(alertInternalError)
 	}
-	psk := tls13.ExpandLabel(cipherSuite.hash.New, c.resumptionSecret, "resumption", msg.nonce, cipherSuite.hash.Size())
+	psk := tls13.ExpandLabel(cipherSuite.hash, c.resumptionSecret, "resumption", msg.nonce, cipherSuite.hash.Size())
 
 	session := c.sessionState()
 	session.secret = psk
