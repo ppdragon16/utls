@@ -331,7 +331,8 @@ func (c *Conn) clientHandshake(ctx context.Context) (err error) {
 
 	if hello.earlyData {
 		suite := cipherSuiteTLS13ByID(session.cipherSuite)
-		transcript := suite.hash.New()
+		transcript := PooledHashNew(suite.hash)
+		defer PooledHashPut(transcript)
 		if err := transcriptMsg(hello, transcript); err != nil {
 			return err
 		}
@@ -547,7 +548,8 @@ func (c *Conn) loadSession(hello *clientHelloMsg) (
 		return
 	}
 	// [UTLS SECTION END]
-	transcript := cipherSuite.hash.New()
+	transcript := PooledHashNew(cipherSuite.hash)
+	defer PooledHashPut(transcript)
 	if err := computeAndUpdatePSK(hello, binderKey, transcript, cipherSuite.finishedHash); err != nil {
 		return nil, nil, nil, err
 	}

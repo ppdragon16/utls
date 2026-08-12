@@ -65,6 +65,11 @@ type serverHandshakeStateTLS13 struct {
 
 func (hs *serverHandshakeStateTLS13) handshake() error {
 	c := hs.c
+	defer func() {
+		if hs.transcript != nil {
+			PooledHashPut(hs.transcript)
+		}
+	}()
 
 	// For an overview of the TLS 1.3 handshake, see RFC 8446, Section 2.
 	if err := hs.processClientHello(); err != nil {
@@ -195,7 +200,7 @@ func (hs *serverHandshakeStateTLS13) processClientHello() error {
 	}
 	c.cipherSuite = hs.suite.id
 	hs.hello.cipherSuite = hs.suite.id
-	hs.transcript = hs.suite.hash.New()
+	hs.transcript = PooledHashNew(hs.suite.hash)
 
 	// First, if a post-quantum key exchange is available, use one. See
 	// draft-ietf-tls-key-share-prediction-01, Section 4 for why this must be
@@ -444,7 +449,8 @@ func (hs *serverHandshakeStateTLS13) checkForResumption() error {
 			sessionState.alpnProtocol == c.clientProtocol {
 			hs.earlyData = true
 
-			transcript := hs.suite.hash.New()
+			transcript := PooledHashNew(hs.suite.hash)
+			defer PooledHashPut(transcript)
 			if err := transcriptMsg(hs.clientHello, transcript); err != nil {
 				return err
 			}

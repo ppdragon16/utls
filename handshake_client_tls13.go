@@ -68,14 +68,24 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		return err
 	}
 
-	hs.transcript = hs.suite.hash.New()
+	hs.transcript = PooledHashNew(hs.suite.hash)
+	defer func() {
+		if hs.transcript != nil {
+			PooledHashPut(hs.transcript)
+		}
+	}()
 
 	if err := transcriptMsg(hs.hello, hs.transcript); err != nil {
 		return err
 	}
 
 	if hs.echContext != nil {
-		hs.echContext.innerTranscript = hs.suite.hash.New()
+		hs.echContext.innerTranscript = PooledHashNew(hs.suite.hash)
+		defer func() {
+			if hs.echContext != nil && hs.echContext.innerTranscript != nil {
+				PooledHashPut(hs.echContext.innerTranscript)
+			}
+		}()
 		// [uTLS SECTION BEGIN]
 		if hs.uconn != nil && hs.uconn.clientHelloBuildStatus == BuildByUtls {
 			if err := hs.uconn.echTranscriptMsg(hs.hello, hs.echContext); err != nil {
@@ -112,7 +122,9 @@ func (hs *clientHandshakeStateTLS13) handshake() error {
 		if subtle.ConstantTimeCompare(acceptConfirmation, hs.serverHello.random[len(hs.serverHello.random)-8:]) == 1 {
 			hs.hello = hs.echContext.innerHello
 			c.serverName = c.config.ServerName
+			PooledHashPut(hs.transcript)
 			hs.transcript = hs.echContext.innerTranscript
+			hs.echContext.innerTranscript = nil
 			c.echAccepted = true
 
 			if hs.serverHello.encryptedClientHello != nil {
@@ -366,7 +378,8 @@ func (hs *clientHandshakeStateTLS13) processHelloRetryRequest() error {
 			ticketAge := c.config.time().Sub(time.Unix(int64(hs.session.createdAt), 0))
 			hello.pskIdentities[0].obfuscatedTicketAge = uint32(ticketAge/time.Millisecond) + hs.session.ageAdd
 
-			transcript := hs.suite.hash.New()
+			transcript := PooledHashNew(hs.suite.hash)
+			defer PooledHashPut(transcript)
 			transcript.Write([]byte{typeMessageHash, 0, 0, uint8(len(chHash))})
 			transcript.Write(chHash)
 			if err := transcriptMsg(hs.serverHello, transcript); err != nil {
@@ -1058,9 +1071,7 @@ func (c *Conn) handleNewSessionTicket(msg *newSessionTicketMsgTLS13) error {
 	if cipherSuite == nil || c.resumptionSecret == nil {
 		return c.sendAlert(alertInternalError)
 	}
-
-	psk := tls13.ExpandLabel(cipherSuite.hash.New, c.resumptionSecret, "resumption",
-		msg.nonce, cipherSuite.hash.Size())
+	psk := tls13.ExpandLabel(cipherSuite.hash.New, c.resumptionSecret, "resumption", msg.nonce, cipherSuite.hash.Size())
 
 	session := c.sessionState()
 	session.secret = psk

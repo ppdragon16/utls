@@ -496,7 +496,8 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 
 	if hello.earlyData {
 		suite := cipherSuiteTLS13ByID(session.cipherSuite)
-		transcript := suite.hash.New()
+		transcript := PooledHashNew(suite.hash)
+		defer PooledHashPut(transcript)
 		if err := transcriptMsg(hello, transcript); err != nil {
 			return err
 		}
@@ -539,11 +540,14 @@ func (c *UConn) clientHandshake(ctx context.Context) (err error) {
 		hs13.serverHello = serverHello
 		hs13.hello = hello
 		hs13.echContext = ech
-		if c.HandshakeState.State13.EarlySecret != nil && session.cipherSuite != 0 {
-			hs13.earlySecret = tls13.NewEarlySecretFromSecret(cipherSuiteTLS13ByID(session.cipherSuite).hash.New, c.HandshakeState.State13.EarlySecret)
-		}
-		if c.HandshakeState.MasterSecret != nil && session.cipherSuite != 0 {
-			hs13.masterSecret = tls13.NewMasterSecretFromSecret(cipherSuiteTLS13ByID(session.cipherSuite).hash.New, c.HandshakeState.MasterSecret)
+		if session != nil && session.cipherSuite != 0 {
+			hh := cipherSuiteTLS13ByID(session.cipherSuite).hash
+			if c.HandshakeState.State13.EarlySecret != nil {
+				hs13.earlySecret = tls13.NewEarlySecretFromSecret(hh.New, c.HandshakeState.State13.EarlySecret)
+			}
+			if c.HandshakeState.MasterSecret != nil {
+				hs13.masterSecret = tls13.NewMasterSecretFromSecret(hh.New, c.HandshakeState.MasterSecret)
+			}
 		}
 		if !sessionIsLocked {
 			hs13.earlySecret = earlySecret

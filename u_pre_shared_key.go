@@ -273,7 +273,8 @@ func (e *UtlsPreSharedKeyExtension) PatchBuiltHello(hello *PubClientHelloMsg) er
 	private.pskBinders = e.Binders // set the placeholder to the private Hello
 
 	//--- mirror loadSession() begin ---//
-	transcript := e.cipherSuite.hash.New()
+	transcript := PooledHashNew(e.cipherSuite.hash)
+	defer PooledHashPut(transcript)
 	helloBytes, err := private.marshalWithoutBinders() // no marshal() will be actually called, as we have set the field `raw`
 	if err != nil {
 		return err
