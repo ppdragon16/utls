@@ -5,7 +5,7 @@
 package tls
 
 import (
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 // Only implemented client-side, for server certificates.

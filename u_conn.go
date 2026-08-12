@@ -18,7 +18,7 @@ import (
 
 	"github.com/refraction-networking/utls/internal/hkdf"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 type ClientHelloBuildStatus int

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 var ErrEmptyPsk = errors.New("tls: empty psk detected; remove the psk extension for this connection or set OmitEmptyPsk to true to conceal it in utls")

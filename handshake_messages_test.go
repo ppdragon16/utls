@@ -16,7 +16,7 @@ import (
 	"testing/quick"
 	"time"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 var tests = []handshakeMessage{

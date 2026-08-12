@@ -3,7 +3,7 @@ package helper
 import (
 	"errors"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 // Uint8to16 converts a slice of uint8 to a slice of uint16.

@@ -8,9 +8,9 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/refraction-networking/utls/cryptobyte"
 	"github.com/refraction-networking/utls/dicttls"
 	"github.com/refraction-networking/utls/internal/hpke"
-	"golang.org/x/crypto/cryptobyte"
 )
 
 // Unstable API: This is a work in progress and may change in the future. Using

@@ -26,7 +26,7 @@ import (
 	"time"
 	_ "unsafe" // for linkname
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 
 	"github.com/refraction-networking/utls/internal/fips140tls"
 )

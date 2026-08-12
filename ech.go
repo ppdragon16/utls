@@ -14,7 +14,7 @@ import (
 	"github.com/refraction-networking/utls/internal/hkdf"
 	"github.com/refraction-networking/utls/internal/hpke"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 // sortedSupportedAEADs is just a sorted version of hpke.SupportedAEADS.

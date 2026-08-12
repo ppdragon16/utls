@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 // A Conn represents a secured connection.

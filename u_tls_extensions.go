@@ -11,8 +11,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/refraction-networking/utls/cryptobyte"
 	"github.com/refraction-networking/utls/dicttls"
-	"golang.org/x/crypto/cryptobyte"
 )
 
 // ExtensionFromID returns a TLSExtension for the given extension ID.

@@ -14,7 +14,7 @@ import (
 	"errors"
 	"io"
 
-	"golang.org/x/crypto/cryptobyte"
+	"github.com/refraction-networking/utls/cryptobyte"
 )
 
 // A SessionState is a resumable session.
