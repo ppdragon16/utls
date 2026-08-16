@@ -87,7 +87,7 @@ type SessionState struct {
 	secret            []byte // master secret for TLS 1.2, or the PSK for TLS 1.3
 	extMasterSecret   bool
 	peerCertificates  []*x509.Certificate
-	activeCertHandles []*activeCert
+	activeCertHandles *certHandles
 	ocspResponse      []byte
 	scts              [][]byte
 	verifiedChains    [][]*x509.Certificate
@@ -226,7 +226,10 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 		if err != nil {
 			return nil, err
 		}
-		ss.activeCertHandles = append(ss.activeCertHandles, c)
+		if ss.activeCertHandles == nil {
+			ss.activeCertHandles = globalCertCache.newCertHandles()
+		}
+		ss.activeCertHandles.add(c)
 		ss.peerCertificates = append(ss.peerCertificates, c.cert)
 	}
 	ss.ocspResponse = cert.OCSPStaple
@@ -254,7 +257,10 @@ func ParseSessionState(data []byte) (*SessionState, error) {
 			if err != nil {
 				return nil, err
 			}
-			ss.activeCertHandles = append(ss.activeCertHandles, c)
+			if ss.activeCertHandles == nil {
+				ss.activeCertHandles = globalCertCache.newCertHandles()
+			}
+			ss.activeCertHandles.add(c)
 			chain = append(chain, c.cert)
 		}
 		ss.verifiedChains = append(ss.verifiedChains, chain)

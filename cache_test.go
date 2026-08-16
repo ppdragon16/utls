@@ -31,13 +31,18 @@ func TestCertCache(t *testing.T) {
 		t.Fatal("newCert returned a unique reference for a duplicate certificate")
 	}
 
+	// newCert only interns the certificate; it does not take a reference.
+	// References are taken via certHandles.add.
 	if entry, ok := cc.Load(string(p.Bytes)); !ok {
 		t.Fatal("cache does not contain expected entry")
-	} else {
-		if refs := entry.(*cacheEntry).refs.Load(); refs != 2 {
-			t.Fatalf("unexpected number of references: got %d, want 2", refs)
-		}
+	} else if refs := entry.(*cacheEntry).refs.Load(); refs != 0 {
+		t.Fatalf("unexpected number of references before add: got %d, want 0", refs)
 	}
+
+	handlesA := cc.newCertHandles()
+	handlesA.add(certA)
+	handlesB := cc.newCertHandles()
+	handlesB.add(certB)
 
 	timeoutRefCheck := func(t *testing.T, key string, count int64) {
 		t.Helper()
@@ -61,23 +66,48 @@ func TestCertCache(t *testing.T) {
 		}
 	}
 
-	// Keep certA alive until at least now, so that we can
-	// purposefully nil it and force the finalizer to be
-	// called.
-	runtime.KeepAlive(certA)
-	certA = nil
-	runtime.GC()
-
+	// Releasing handle A drops the refcount to 1, but the entry stays cached.
+	handlesA.release()
 	timeoutRefCheck(t, string(p.Bytes), 1)
 
-	// Keep certB alive until at least now, so that we can
-	// purposefully nil it and force the finalizer to be
-	// called.
-	runtime.KeepAlive(certB)
-	certB = nil
+	// Releasing handle B drops the refcount to 0 and evicts the entry.
+	handlesB.release()
+	timeoutRefCheck(t, string(p.Bytes), 0)
+}
+
+func TestCertCacheFinalizerReleases(t *testing.T) {
+	cc := certCache{}
+	p, _ := pem.Decode([]byte(rsaCertPEM))
+	if p == nil {
+		t.Fatal("Failed to decode certificate")
+	}
+
+	cert, err := cc.newCert(p.Bytes)
+	if err != nil {
+		t.Fatalf("newCert failed: %s", err)
+	}
+
+	handles := cc.newCertHandles()
+	handles.add(cert)
+
+	// Drop the only reference; the batch finalizer must decrement the refcount
+	// and evict the entry once it runs.
+	runtime.KeepAlive(handles)
+	handles = nil
 	runtime.GC()
 
-	timeoutRefCheck(t, string(p.Bytes), 0)
+	c := time.After(4 * time.Second)
+	for {
+		select {
+		case <-c:
+			t.Fatal("timed out waiting for the finalizer to evict the entry")
+		default:
+			if _, ok := cc.Load(string(p.Bytes)); !ok {
+				return
+			}
+			runtime.GC()
+		}
+	}
 }
 
 func BenchmarkCertCache(b *testing.B) {
@@ -89,26 +119,23 @@ func BenchmarkCertCache(b *testing.B) {
 	cc := certCache{}
 	b.ReportAllocs()
 	b.ResetTimer()
-	// We expect that calling newCert additional times after
-	// the initial call should not cause additional allocations.
+	// newCert itself must not allocate after the first call (intern + no handle),
+	// and taking/releasing references must not allocate either.
 	for extra := 0; extra < 4; extra++ {
 		b.Run(fmt.Sprint(extra), func(b *testing.B) {
-			actives := make([]*activeCert, extra+1)
+			handles := make([]*certHandles, extra+1)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				var err error
-				actives[0], err = cc.newCert(p.Bytes)
-				if err != nil {
-					b.Fatal(err)
-				}
-				for j := 0; j < extra; j++ {
-					actives[j+1], err = cc.newCert(p.Bytes)
+				for j := 0; j < extra+1; j++ {
+					cert, err := cc.newCert(p.Bytes)
 					if err != nil {
 						b.Fatal(err)
 					}
+					handles[j] = cc.newCertHandles()
+					handles[j].add(cert)
 				}
 				for j := 0; j < extra+1; j++ {
-					actives[j] = nil
+					handles[j].release()
 				}
 				runtime.GC()
 			}
