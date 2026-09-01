@@ -1444,8 +1444,17 @@ func (c *Conn) Read(b []byte) (int, error) {
 
 // Close closes the connection.
 func (c *Conn) Close() error {
-	defer c.rawInput.Reset()
-	defer c.hand.Reset()
+	// NOTE(pooled buffers): do NOT Reset rawInput/hand here. Close is only
+	// interlocked with Write (activeCall bit 1) — a concurrent Read in
+	// readFromUntil may hold cap(rawInput backing array) from before the
+	// Reset, and PooledBuffer.Reset then nils the slice and returns the
+	// array to the pool. The pending slice op panics with
+	// "slice bounds out of range [:16384] with capacity 0" (observed in
+	// dae via smux.recvLoop -> vless.ReadRespHeader), and the recycled
+	// array can be handed to another connection, corrupting data across
+	// connections. Upstream crypto/tls does not recycle these buffers on
+	// Close either: letting them be GC'd with the Conn is safe and costs
+	// one pooled buffer per closed connection.
 	// Interlock with Conn.Write above.
 	var x int32
 	for {
