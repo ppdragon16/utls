@@ -1444,17 +1444,36 @@ func (c *Conn) Read(b []byte) (int, error) {
 
 // Close closes the connection.
 func (c *Conn) Close() error {
-	// NOTE(pooled buffers): do NOT Reset rawInput/hand here. Close is only
-	// interlocked with Write (activeCall bit 1) — a concurrent Read in
-	// readFromUntil may hold cap(rawInput backing array) from before the
-	// Reset, and PooledBuffer.Reset then nils the slice and returns the
-	// array to the pool. The pending slice op panics with
-	// "slice bounds out of range [:16384] with capacity 0" (observed in
-	// dae via smux.recvLoop -> vless.ReadRespHeader), and the recycled
-	// array can be handed to another connection, corrupting data across
-	// connections. Upstream crypto/tls does not recycle these buffers on
-	// Close either: letting them be GC'd with the Conn is safe and costs
-	// one pooled buffer per closed connection.
+	// Recycle rawInput/hand, but ONLY when no Read is in flight. Close is
+	// only interlocked with Write (activeCall bit 1), so a Read may be
+	// parked inside readFromUntil -> ReadFromN holding cap(rawInput backing
+	// array) — an unconditional Reset there nils the slice, PutBuffers the
+	// array, and the pending slice op panics with "slice bounds out of
+	// range [:16384] with capacity 0" (observed via smux.recvLoop ->
+	// vless.ReadRespHeader), with the recycled array potentially handed to
+	// another connection (cross-connection corruption).
+	//
+	// c.in is the read-path mutex: every rawInput access happens under it
+	// (readRecordOrCCS/readFromUntil). TryLock therefore distinguishes the
+	// two cases without blocking or deadlocking (QUIC event callbacks run
+	// under the same lock): lock acquired -> no reader -> safe to recycle;
+	// lock busy -> a Read is in flight. That reader wakes as soon as
+	// c.conn.Close() below drops the underlying conn and releases c.in
+	// within microseconds, so a short bounded retry window lets Close still
+	// recycle in the common "teardown while active" case; if the reader is
+	// truly stuck, leave the buffers to the GC with the Conn instead of
+	// blocking Close forever.
+	defer func() {
+		for range 10 {
+			if c.in.TryLock() {
+				c.rawInput.Reset()
+				c.hand.Reset()
+				c.in.Unlock()
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}()
 	// Interlock with Conn.Write above.
 	var x int32
 	for {
